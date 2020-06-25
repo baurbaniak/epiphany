@@ -51,11 +51,13 @@ and also based on own experience (stack installation and upgrade).
 ## Implementation architecture
 Additional components are required for Harbor implementation.  
 
-- Shared storage volume between kubernetes nodes (in example NFS),
+- Shared storage volume between kubernetes nodes ( NFS),
 - Component for TLS/SSL certificate request (maybe cert-manager?), 
 - Component for TLS/SSL certificate store and manage certificate validation (maybe Vault?), 
-- Component for TLS/SSL certificate share between server and client (maybe Vault?). 
-- HELM component for deployment procedure.
+- Component for TLS/SSL certificate share between server and client (maybe Vault?), 
+- HELM component for deployment procedure,
+- Load balancer (HAProxy) for access to Portal and Notary service.
+
 
 Diagram for TLS certificate management:
 
@@ -76,6 +78,126 @@ Kubernetes deployment diagram:
 - Deploy "cert request/management" service and integrate with Hashicorp Vault - require research (M/L)
 - Deploy Harbor services using Helm3 with self-signed TLS certs (for non-production environments) (L)
 - Deploy Harbor services using Helm3 with commercial TLS certs (for prod environments) (M/L)
+- Load balancer (HAProxy) setup.
+
+## Step by step procedure for deploy Demo environment
+
+1. Deploy Epiphany cluster with components: NFS server, Kubernetes cluster (master node and at least one node), load balancer (HAProxy) and PostgreSQL database.
+
+2. Setup HAProxy config file:
+
+```
+frontend https_front
+    mode tcp
+    option forwardfor
+    option forwardfor header X-Real-IP
+    http-request set-header X-Forwarded-Proto https
+    bind *:443 ssl crt /etc/ssl/haproxy/self-signed-test.tld.pem
+    default_backend http_back1
+backend http_back1
+   balance roundrobin
+   http-request add-header X-Forwarded-Proto https
+   server node1 {KUBERNETES_PORTAL_SERVICE_IP}:30002 check
+frontend https_notary
+    mode tcp
+    option forwardfor
+    option forwardfor header X-Real-IP
+    http-request set-header X-Forwarded-Proto https
+    bind *:4443 ssl crt /etc/ssl/haproxy/self-signed-test.tld.pem
+    default_backend http_back_notary
+backend http_back_notary
+    balance roundrobin
+    http-request add-header X-Forwarded-Proto https
+    server node1 {KUBERNETES_NOATRY_SERVICE_IP}:30004 check
+```
+3. Setup persistent volumes on Kubernetes. Login to Master node and create PV and PVC.
+
+harbor-nfs-persistent-volume.yaml
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-nfs-volume
+  labels:
+    name: harbor-nfs-volume
+spec:
+  storageClassName: defaultfs
+  capacity:
+    storage: 50Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+    - rsize=1048576
+    - wsize=1048576
+    - timeo=600
+    - retrans=2
+  nfs:
+    path: /mnt/nfs_share
+    server: {nfs_server_ip_address}
+```
+harbor-nfs-persistent-volume-claim.yaml
+```yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: harbor-nfs-volume-claim
+spec:
+  storageClassName: defaultfs
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  selector:
+    matchLabels:
+      name: harbor-nfs-volume
+```      
+4. Manually create databases in PostgreSQL
+
+```
+create database harbor;
+create database clair;
+create database notary_signer;
+create database notary_server;
+create user harbor with encrypted password 'Harbor12345';
+grant all privileges on database harbor to harbor;
+grant all privileges on database clair to harbor;
+grant all privileges on database notary_signer to harbor;
+grant all privileges on database notary_server to harbor;
+```
+4. Login to Kubernetes Master node and add Harbor Helm official repository:
+
+```
+helm repo add harbor https://helm.goharbor.io
+```
+
+5. Deploy Harbor from helm repository with parameters:
+
+```
+helm install release-name harbor/harbor --set expose.type=nodePort \
+--set expose.tls.enabled=false \
+--set persistence.persistentVolumeClaim.registry.existingClaim=harbor-nfs-volume-claim \
+--set persistence.persistentVolumeClaim.registry.accessMode=ReadWriteMany \
+--set persistence.persistentVolumeClaim.registry.subPath=/data \
+--set persistence.persistentVolumeClaim.chartmuseum.existingClaim=harbor-nfs-volume-claim \
+--set persistence.persistentVolumeClaim.chartmuseum.accessMode=ReadWriteMany \
+--set persistence.persistentVolumeClaim.jobservice.existingClaim=harbor-nfs-volume-claim \
+--set persistence.persistentVolumeClaim.jobservice.accessMode=ReadWriteMany \
+--set persistence.persistentVolumeClaim.redis.existingClaim=harbor-nfs-volume-claim \
+--set persistence.persistentVolumeClaim.redis.accessMode=ReadWriteMany \
+--set persistence.persistentVolumeClaim.trivy.existingClaim=harbor-nfs-volume-claim \
+--set persistence.persistentVolumeClaim.trivy.accessMode=ReadWriteMany \
+--set imagePullPolicy=Always \
+--set database.type=external \  
+--set database.external.host={POSTGRES_SERVER_IP} \
+--set database.external.username=harbor \
+--set database.external.password=Harbor12345 \ 
+--set trivy.enabled=false \
+--set externalURL={LOAD_BALACER_PUBLIC_IP}
+```
 
 
 
