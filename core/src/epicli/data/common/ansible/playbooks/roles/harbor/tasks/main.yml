@@ -1,0 +1,26 @@
+---
+# This role is responsible for installing and configuring Harbor Project
+
+- name: Set Harbor helm chart values from custom configuration
+  set_fact:
+    harbor_helm_chart_values: "{{ specification.harbor_helm_chart_values }}"
+  when: specification.helm_chart_values is defined
+
+- name: Set Harbor helm chart name from custom configuration
+  set_fact:
+    harbor_helm_chart_name: "{{ specification.harbor_helm_chart_name }}"
+  when: specification.harbor_helm_chart_name is defined
+
+- name: Set Harbor helm chart disable flag from custom configuration
+  set_fact:
+    harbor_disable_helm_chart: "{{ specification.harbor_disable_helm_chart }}"
+  when: specification.harbor_disable_helm_chart is defined
+
+- name: Harbor
+  include_role:
+    name: helm 
+    tasks_from: install-chart
+  vars:
+    disable_helm_chart: "{{ harbor_disable_helm_chart }}"
+    helm_chart_name: "{{ harbor_helm_chart_name }}"
+    helm_chart_values:  "{{ harbor_helm_chart_values }}"
