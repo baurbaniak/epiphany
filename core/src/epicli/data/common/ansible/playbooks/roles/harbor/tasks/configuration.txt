@@ -1,0 +1,10 @@
+kind: configuration/helm-harbor
+title: "Helm Harbor"
+name: harbor-release
+specification:
+  helm_chart_name: harbor
+  disable_helm_chart: false
+  helm_chart_values:
+    service:
+      port: 8080
+    nameOverride: harbor-service

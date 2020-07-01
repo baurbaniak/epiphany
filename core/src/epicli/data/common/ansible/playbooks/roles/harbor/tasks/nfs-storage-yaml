@@ -1,0 +1,37 @@
+---
+- name: Upload NFS persistent volume yaml
+  become: true
+  template:
+    src: templates/harbor-nfs-persistent-volume.yml.j2
+    dest: "/home/{{ admin_user.name }}/k8s-persistent-volume.yml"
+    owner: "{{ admin_user.name }}"
+    group: "{{ admin_user.name }}"
+    mode: u=rw,go=r
+
+- name: Upload NFS persistent volume claim yaml
+  become: true
+  template:
+    src: templates/harbor-nfs-persistent-volume-claim.yml.j2
+    dest: "/home/{{ admin_user.name }}/k8s-persistent-volume-claim.yml"
+    owner: "{{ admin_user.name }}"
+    group: "{{ admin_user.name }}"
+    mode: u=rw,go=r
+
+- when: kubernetes_common.automation_designated_master == inventory_hostname
+  become_user: "{{ admin_user.name }}"
+  environment:
+    KUBECONFIG: "/home/{{ admin_user.name }}/.kube/config"
+  block:
+    - name: Apply storage yml
+      shell: |
+        kubectl apply \
+          -f /home/{{ admin_user.name }}/harbor-nfs-persistent-volume.yml
+      args:
+        executable: /bin/bash
+
+    - name: Apply storage claim yml
+      shell: |
+        kubectl apply \
+          -f /home/{{ admin_user.name }}/harbor-nfs-persistent-volume-claim.yml
+      args:
+        executable: /bin/bash

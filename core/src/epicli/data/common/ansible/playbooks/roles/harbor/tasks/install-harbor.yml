@@ -1,0 +1,37 @@
+---
+- name: "Add helm repo"
+  environment:
+    KUBECONFIG: "/home/{{ admin_user.name }}/.kube/config"
+  shell: |
+    helm repo \
+      add harbor https://helm.goharbor.io
+  args:
+    executable: /bin/bash
+
+- name: "Install harbor"
+  environment:
+    KUBECONFIG: "/home/{{ admin_user.name }}/.kube/config"
+  shell: |
+    helm install \
+      {{ helm-harbor.name }} harbor/harbor --set expose.type=nodePort \
+      --set expose.tls.enabled=false \
+      --set notary.enabled=true \
+      --set persistence.persistentVolumeClaim.registry.existingClaim=harbor-nfs-volume-claim \
+      --set persistence.persistentVolumeClaim.registry.accessMode=ReadWriteMany \
+      --set persistence.imageChartStorage.filesystem.rootdirectory=/data \
+      --set persistence.persistentVolumeClaim.chartmuseum.existingClaim=harbor-nfs-volume-claim \
+      --set persistence.persistentVolumeClaim.chartmuseum.accessMode=ReadWriteMany \
+      --set persistence.persistentVolumeClaim.jobservice.existingClaim=harbor-nfs-volume-claim \
+      --set persistence.persistentVolumeClaim.jobservice.accessMode=ReadWriteMany \
+      --set persistence.persistentVolumeClaim.redis.existingClaim=harbor-nfs-volume-claim \
+      --set persistence.persistentVolumeClaim.redis.accessMode=ReadWriteMany \
+      --set persistence.persistentVolumeClaim.trivy.existingClaim=harbor-nfs-volume-claim \
+      --set persistence.persistentVolumeClaim.trivy.accessMode=ReadWriteMany \
+      --set imagePullPolicy=Always --set database.type=external \
+      --set database.external.host='{{ hostvars[groups['postgresql'][0]]['ansible_default_ipv4']['address'] }}'
+      --set database.external.username=harbor \
+      --set database.external.password=Harbor12345 \
+      --set trivy.enabled=false \
+      --set externalURL='{{ hostvars[groups['haproxy'][0]]['ansible_default_ipv4']['address'] }}'
+  args:
+    executable: /bin/bash
